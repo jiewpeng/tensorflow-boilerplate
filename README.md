@@ -18,3 +18,6 @@ This is split into 3 notebooks:
 
 - Add code for deploying the model
 - Add code to test the deployed model
+- Use `tf.data` for the TFRecord input fn
+- Use `tf.transform` to tokenize text
+- Use Tensorflow Model Analysis to produce dashboard of model performance analysis
