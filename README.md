@@ -21,3 +21,4 @@ This is split into 3 notebooks:
 - Use `tf.data` for the TFRecord input fn
 - Use `tf.transform` to tokenize text ([reference code here](https://github.com/tensorflow/transform/blob/master/examples/sentiment_example.py))
 - Use Tensorflow Model Analysis to produce dashboard of model performance analysis 
+- Add hyperparameter tuning
