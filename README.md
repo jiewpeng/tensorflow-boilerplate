@@ -2,7 +2,7 @@
 
 Provides boilerplate for a production Tensorflow project, including serving using the `tf.estimatator` API, hyperparameter tuning etc. Can train and serve both on-premise and on the cloud.
 
-**Note: this code will not work on Windows because it requires Python 2, since Apache Beam does not work on Python 3. Tensorflow cannot be installed on Python 2 on Windows.**
+**Note: this code will not work on Windows because it requires Python 2 (Apache Beam can only be installed on Python 2 at the moment). Tensorflow cannot be installed on Python 2 on Windows.**
 
 ## Workflow
 
