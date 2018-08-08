@@ -84,7 +84,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--embedding_type',
         help='Embedding to use, one of "nnlm", "universal-sentence-encoder", "elmo"',
-        default='nnlm',
+        default='universal-sentence-encoder',
         type=str
     )
     parser.add_argument(

@@ -4,6 +4,8 @@
 from __future__ import print_function, division, absolute_import # python 2 compatibility
 import pandas as pd
 import tensorflow as tf
+import tensorflow.contrib.learn as tflearn
+import tensorflow.contrib.metrics as metrics
 from tensorflow_transform.saved import input_fn_maker, saved_transform_io
 from tensorflow_transform.tf_metadata import metadata_io
 import tensorflow_hub as hub
@@ -29,13 +31,10 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
   
     if embedding_type == 'nnlm':
         module_url = 'https://tfhub.dev/google/nnlm-en-dim128/1'
-        embedding_size = 128
     elif embedding_type == 'universal-sentence-encoder':
         module_url = 'https://tfhub.dev/google/universal-sentence-encoder/2'
-        embedding_size = 512
     elif embedding_type == 'elmo':
         module_url = 'https://tfhub.dev/google/elmo/2'
-        embedding_size = 1024
     elif embedding_type is None:
         pass
     else:
@@ -165,6 +164,6 @@ def gzip_reader_fn():
 
 def get_eval_metrics():
     return {
-        'rmse': tflearn.MetricSpec(metric_fn=metrics.streaming_root_mean_squared_error),
-        'training/hptuning/metric': tflearn.MetricSpec(metric_fn=metrics.streaming_root_mean_squared_error),
+        'accuracy': tflearn.MetricSpec(metric_fn=metrics.streaming_accuracy),
+        'training/hptuning/metric': tflearn.MetricSpec(metric_fn=metrics.streaming_accuracy),
     }
