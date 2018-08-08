@@ -17,3 +17,4 @@ This is split into 3 notebooks:
 ## TODO
 
 - Add code for deploying the model
+- Add code to test the deployed model
