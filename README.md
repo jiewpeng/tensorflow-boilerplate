@@ -24,3 +24,4 @@ This is split into 3 notebooks:
 - Add hyperparameter tuning
 - Add documentation for key APIs used and reasons for using them
 - Add pre-requisites for running this code
+- Use [tfma's example of packaging the model](https://github.com/tensorflow/model-analysis/tree/master/examples/chicago_taxi)
