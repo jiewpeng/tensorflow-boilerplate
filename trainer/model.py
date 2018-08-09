@@ -23,6 +23,7 @@ DEFAULTS = [['spam'], ["FreeMsg Hey there darling it's been 3 week's now and no 
 INPUT_COLUMNS = [
     tf.placeholder(tf.string, name='text')
 ]
+PASSTHROUGH_COLUMNS = ['key']
 
 
 def build_estimator(model_dir, model_type, embedding_type, learning_rate,
@@ -46,7 +47,7 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
     feature_columns = embedding = [embedding]
     
     if model_type == 'linear':
-        return tf.estimator.LinearClassifier(
+        estimator = tf.estimator.LinearClassifier(
             feature_columns=feature_columns,
             n_classes=N_CLASSES,
             label_vocabulary=LABEL_VOCABULARY,
@@ -58,7 +59,7 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
             )
         )
     elif model_type == 'dnn':
-        return tf.estimator.DNNClassifier(
+        estimator = tf.estimator.DNNClassifier(
             feature_columns=feature_columns,
             hidden_units=hidden_units,
             n_classes=N_CLASSES,
@@ -72,6 +73,10 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
     else:
         raise InputErorr('Model type must be one of "linear" or "dnn"')
         
+    if len(PASSTHROUGH_COLUMNS) > 0:
+        estimator = tf.contrib.estimator.forward_features(estimator, PASSTHROUGH_COLUMNS)
+
+    return estimator
         
 # Serving input function
 def make_serving_input_fn_for_base64_json(args):
@@ -94,10 +99,19 @@ def make_serving_input_fn(args):
             column_name: tf.placeholder(tf.string, [None]) for column_name in 'text'.split(',')
         }
         
+        if len(PASSTHROUGH_COLUMNS) > 0:
+            for col in PASSTHROUGH_COLUMNS:
+                feature_placeholders[col] = tf.placeholder(tf.string, [None])
+        
         _, features = saved_transform_io.partially_apply_saved_transform(
             transform_savedmodel_dir,
             feature_placeholders
         )
+        
+        if len(PASSTHROUGH_COLUMNS) > 0:
+            for col in PASSTHROUGH_COLUMNS:
+                features[col] = tf.identity(feature_placeholders[col])
+        
         return tf.estimator.export.ServingInputReceiver(features, feature_placeholders)
     
     return _input_fn
