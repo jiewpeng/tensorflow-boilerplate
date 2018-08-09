@@ -96,7 +96,6 @@ if __name__ == '__main__':
     parser.add_argument(
         '--hidden_units',
         help='Hidden units of the DNN model, separated by space e.g. "128 64"',
-        default='128 64 32',
         type=str
     )
     parser.add_argument(
