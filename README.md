@@ -14,16 +14,26 @@ This is split into 3 notebooks:
 1. The second notebook implements the pre-processing pipeline in `tf.transform`, filtering away invalid data and performing any pre-processing required.
 1. Finally, the third notebook implements the model itself, and packages up the model into a package.
 
+## Pre-requisites
+
+To run this code, we would need Python 2 (for Apache Beam). We would need the following Python packages:
+
+- tensorflow
+- tensorflow-serving
+- tensorflow-transform
+- tensorflow-hub
+- snappy
+- apache-beam
+- pandas
+- pandas-profiling
+
 ## Dataset Information
 
 The sample data in this repo is the [SMS Spam Collection dataset](https://archive.ics.uci.edu/ml/datasets/SMS+Spam+Collection), which has been collected from various sources.
 
 ## TODO
 
-- Use `tf.data` for the TFRecord input fn
-- Use `tf.transform` to tokenize text ([reference code here](https://github.com/tensorflow/transform/blob/master/examples/sentiment_example.py))
 - Use Tensorflow Model Analysis to produce dashboard of model performance analysis 
 - Add hyperparameter tuning
 - Add documentation for key APIs used and reasons for using them
-- Add pre-requisites for running this code
 - Use [tfma's example of packaging the model](https://github.com/tensorflow/model-analysis/tree/master/examples/chicago_taxi)
