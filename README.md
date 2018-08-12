@@ -14,11 +14,14 @@ This is split into 3 notebooks:
 1. The second notebook implements the pre-processing pipeline in `tf.transform`, filtering away invalid data and performing any pre-processing required.
 1. Finally, the third notebook implements the model itself, and packages up the model into a package.
 
+## Dataset Information
+
+The sample data in this repo is the [SMS Spam Collection dataset](https://archive.ics.uci.edu/ml/datasets/SMS+Spam+Collection), which has been collected from various sources.
+
 ## TODO
 
 - Use `tf.data` for the TFRecord input fn
 - Use `tf.transform` to tokenize text ([reference code here](https://github.com/tensorflow/transform/blob/master/examples/sentiment_example.py))
-- Refactor to get common variables into a config file
 - Use Tensorflow Model Analysis to produce dashboard of model performance analysis 
 - Add hyperparameter tuning
 - Add documentation for key APIs used and reasons for using them
