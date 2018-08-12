@@ -28,10 +28,10 @@ if __name__ == '__main__':
         default = 512
     )
     parser.add_argument(
-        '--train_steps',
-        help = 'Steps to run the training job for',
+        '--num_epochs',
+        help = 'Epochs to run the training job for',
         type = int,
-        default = 5000
+        default = 50
     )
     parser.add_argument(
         '--eval_steps',

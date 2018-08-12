@@ -2,6 +2,9 @@
 
 
 from __future__ import print_function, division, absolute_import # python 2 compatibility
+import sys
+reload(sys)
+sys.setdefaultencoding('utf8')
 import pandas as pd
 import tensorflow as tf
 import tensorflow.contrib.learn as tflearn
@@ -12,18 +15,13 @@ import tensorflow_hub as hub
 import apache_beam as beam
 import shutil
 import os
+from config import REGION, BUCKET, PROJECT, LABEL_COL, PASSTHROUGH_COLS, STRING_COLS, NUMERIC_COLS, DELIM, RENAMED_COLS
 print(tf.__version__)
 tf.logging.set_verbosity(tf.logging.INFO)
 
-CSV_COLUMNS = ['spam', 'text']
-LABEL_COLUMN = 'spam'
-LABEL_VOCABULARY = ['ham', 'spam']
-N_CLASSES = len(LABEL_VOCABULARY)
-DEFAULTS = [['spam'], ["FreeMsg Hey there darling it's been 3 week's now and no word back! I'd like some fun you up for it still? Tb ok! XxX std chgs to send, 1.50 to rcv"]]
-INPUT_COLUMNS = [
-    tf.placeholder(tf.string, name='text')
-]
-PASSTHROUGH_COLUMNS = ['key']
+with open('data/misc/labels.txt', 'r') as f:
+    LABEL_VOCABULARY = f.readline().split(DELIM)
+    N_CLASSES = len(LABEL_VOCABULARY)
 
 
 def build_estimator(model_dir, model_type, embedding_type, learning_rate,
@@ -73,8 +71,8 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
     else:
         raise InputErorr('Model type must be one of "linear" or "dnn"')
         
-    if len(PASSTHROUGH_COLUMNS) > 0:
-        estimator = tf.contrib.estimator.forward_features(estimator, PASSTHROUGH_COLUMNS)
+    if len(PASSTHROUGH_COLS) > 0:
+        estimator = tf.contrib.estimator.forward_features(estimator, PASSTHROUGH_COLS)
 
     return estimator
         
@@ -87,7 +85,7 @@ def make_serving_input_fn_for_base64_json(args):
     return input_fn_maker.build_parsing_transforming_serving_input_receiver_fn(
         raw_metadata,
         transform_savedmodel_dir,
-        exclude_raw_keys=[LABEL_COLUMN]
+        exclude_raw_keys=[LABEL_COL]
     )
 
 def make_serving_input_fn(args):
@@ -96,21 +94,22 @@ def make_serving_input_fn(args):
     
     def _input_fn():
         feature_placeholders = {
-            column_name: tf.placeholder(tf.string, [None]) for column_name in 'text'.split(',')
+            column_name: tf.placeholder(tf.string, [None]) for column_name in STRING_COLS
         }
-        
-        if len(PASSTHROUGH_COLUMNS) > 0:
-            for col in PASSTHROUGH_COLUMNS:
-                feature_placeholders[col] = tf.placeholder(tf.string, [None])
+        feature_placeholders.update({
+            column_name: tf.placeholder(tf.float32, [None]) for column_name in NUMERIC_COLS
+        })
+        feature_placeholders.pop(LABEL_COL)
         
         _, features = saved_transform_io.partially_apply_saved_transform(
             transform_savedmodel_dir,
             feature_placeholders
         )
         
-        if len(PASSTHROUGH_COLUMNS) > 0:
-            for col in PASSTHROUGH_COLUMNS:
-                features[col] = tf.identity(feature_placeholders[col])
+        # so that outputs are consistently in lists
+        if len(PASSTHROUGH_COLS) > 0:
+            for col in PASSTHROUGH_COLS:
+                features[col] = tf.expand_dims(tf.identity(feature_placeholders[col]), axis=1)
         
         return tf.estimator.export.ServingInputReceiver(features, feature_placeholders)
     
@@ -134,7 +133,7 @@ def read_dataset(args, mode):
         metadata=transformed_metadata,
         file_pattern = (input_paths[0] if len(input_paths) == 1 else input_paths),
         training_batch_size=batch_size,
-        label_keys=[LABEL_COLUMN],
+        label_keys=[LABEL_COL],
         reader=gzip_reader_fn,
         randomize_input=(mode == tf.estimator.ModeKeys.TRAIN),
         num_epochs=(None if mode == tf.estimator.ModeKeys.TRAIN else 1)
@@ -143,6 +142,18 @@ def read_dataset(args, mode):
 
 # create tf.estimator train and evaluate function
 def train_and_evaluate(args):
+    # figure out train steps based on no. of epochs, no. of rows in dataset and batch size
+    tfrecord_options = tf.python_io.TFRecordOptions(compression_type=tf.python_io.TFRecordCompressionType.GZIP)
+    nrows = sum(
+        sum(1 for _ in tf.python_io.tf_record_iterator(f, options=tfrecord_options)) 
+        for f in tf.gfile.Glob(args['train_data_paths'])
+    )
+    num_epochs = args['num_epochs']
+    batch_size = args['train_batch_size']
+    if batch_size > nrows:
+        batch_size = nrows
+    max_steps = num_epochs * nrows / batch_size
+    
     # modify according to build_estimator function
     estimator = build_estimator(
         args['model_dir'],
@@ -157,7 +168,7 @@ def train_and_evaluate(args):
     
     train_spec = tf.estimator.TrainSpec(
         input_fn=read_dataset(args, tf.estimator.ModeKeys.TRAIN),
-        max_steps=args['train_steps']
+        max_steps=max_steps
     )
     
     exporter = tf.estimator.LatestExporter('exporter', make_serving_input_fn(args))
@@ -169,6 +180,27 @@ def train_and_evaluate(args):
     )
     
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+    
+    # export results
+    if not os.path.exists('data/output'):
+        os.mkdir('data/output')
+    eval_preds = pd.DataFrame(list(estimator.predict(input_fn=read_dataset(args, tf.estimator.ModeKeys.EVAL))))
+    probabilities = list(list(arr) for arr in eval_preds['probabilities']) # pandas is weird with how it stores arrays
+    with tf.Session() as sess:
+        eval_preds['probability'] = sess.run(tf.reduce_max(probabilities, reduction_indices=[1]))
+    eval_preds['pred_' + LABEL_COL] = eval_preds['classes'].map(lambda x: x[0]) # predictions come in a list per row
+    eval_preds = eval_preds[['pred_' + LABEL_COL, 'probability']]
+    raw_eval_df = pd.concat([
+        pd.read_csv(f, sep=DELIM, names=RENAMED_COLS)
+        for f in tf.gfile.Glob('data/split/eval*.csv')], 
+        axis=0, ignore_index=True)
+    cols = list(raw_eval_df.columns)
+    cols.remove(LABEL_COL)
+    raw_eval_df = raw_eval_df[cols + [LABEL_COL]]
+    for col in ['pred_' + LABEL_COL, 'probability']:
+        raw_eval_df[col] = eval_preds[col]
+    raw_eval_df['wrong'] = (raw_eval_df['pred_' + LABEL_COL] != raw_eval_df[LABEL_COL]).astype(int)
+    raw_eval_df.to_excel('data/output/eval_with_preds.xlsx', index=False)
     
     
 def gzip_reader_fn():
