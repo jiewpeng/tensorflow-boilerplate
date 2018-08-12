@@ -19,5 +19,8 @@ STRING_COLS = [
     # passthrough
 ] # includes passthrough and label cols if applicable
 NUMERIC_COLS = [] # includes passthrough and label cols if applicable
+TOKENIZE_COL = 'text'
+NGRAM_RANGE = (1, 3)
+MAX_TOKENS = 2000
 LABEL_COL = 'spam'
 PASSTHROUGH_COLS = []

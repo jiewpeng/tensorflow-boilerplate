@@ -15,7 +15,7 @@ import tensorflow_hub as hub
 import apache_beam as beam
 import shutil
 import os
-from config import REGION, BUCKET, PROJECT, LABEL_COL, PASSTHROUGH_COLS, STRING_COLS, NUMERIC_COLS, DELIM, RENAMED_COLS
+from config import REGION, BUCKET, PROJECT, LABEL_COL, PASSTHROUGH_COLS, STRING_COLS, NUMERIC_COLS, DELIM, RENAMED_COLS, TOKENIZE_COL, MAX_TOKENS
 print(tf.__version__)
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -40,11 +40,14 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
         raise InputError('Embedding type must be one of "nnlm", "universal-sentence-encoder", "elmo", None')
     
     if embedding_type is not None:
-        embedding = hub.text_embedding_column('text', module_url, trainable=False)
+        embedding = hub.text_embedding_column(TOKENIZE_COL, module_url, trainable=False)
+    bow_indices = tf.feature_column.categorical_column_with_identity('bow_indices', num_buckets=MAX_TOKENS+1)
+    weighted_bow = tf.feature_column.weighted_categorical_column(bow_indices, 'bow_weight')
         
-    feature_columns = embedding = [embedding]
     
     if model_type == 'linear':
+        feature_columns = [weighted_bow]
+        
         estimator = tf.estimator.LinearClassifier(
             feature_columns=feature_columns,
             n_classes=N_CLASSES,
@@ -57,6 +60,8 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
             )
         )
     elif model_type == 'dnn':
+        feature_columns = [embedding]
+        
         estimator = tf.estimator.DNNClassifier(
             feature_columns=feature_columns,
             hidden_units=hidden_units,
@@ -67,6 +72,28 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
                 learning_rate=learning_rate,
             ),
             dropout=dropout
+        )
+    elif model_type == 'dnn-linear-combined':
+        dnn_features = [embedding]
+        linear_features = [weighted_bow]
+        
+        estimator = tf.estimator.DNNLinearCombinedClassifier(
+            linear_feature_columns=linear_features,
+            linear_optimizer=tf.train.FtrlOptimizer(
+                learning_rate=learning_rate,
+                l1_regularization_strength=l1_regularization_strength,
+                l2_regularization_strength=l2_regularization_strength
+            ),
+            dnn_feature_columns=dnn_features,
+            dnn_optimizer=tf.train.AdamOptimizer(
+                learning_rate=learning_rate,
+            ),
+            dnn_dropout=dropout,
+            dnn_hidden_units=hidden_units,
+            n_classes=N_CLASSES,
+            label_vocabulary=LABEL_VOCABULARY,
+            model_dir=model_dir,
+            batch_norm=True
         )
     else:
         raise InputErorr('Model type must be one of "linear" or "dnn"')
