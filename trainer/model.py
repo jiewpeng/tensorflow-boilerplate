@@ -11,6 +11,8 @@ import tensorflow.contrib.learn as tflearn
 import tensorflow.contrib.metrics as metrics
 from tensorflow_transform.saved import input_fn_maker, saved_transform_io
 from tensorflow_transform.tf_metadata import metadata_io
+from tensorflow_transform.beam.tft_beam_io import beam_metadata_io
+import tensorflow_model_analysis as tfma
 import tensorflow_hub as hub
 import apache_beam as beam
 import shutil
@@ -143,6 +145,33 @@ def make_serving_input_fn(args):
     return _input_fn
 
 
+def make_eval_input_fn(args):
+    transform_savedmodel_dir = (
+        os.path.join(args['metadata_path'], 'transform_fn'))
+    
+    def _input_fn():
+        metadata = beam_metadata_io.metadata_io.read_metadata('data/tft/metadata/rawdata_metadata/')
+        raw_feature_spec = metadata.schema.as_feature_spec()
+
+        serialized_tf_example = tf.placeholder(dtype=tf.string, shape=[None], name='input_example_tensor')
+
+        features = tf.parse_example(serialized_tf_example, raw_feature_spec)
+        
+        _, transformed_features = saved_transform_io.partially_apply_saved_transform(
+            transform_savedmodel_dir,
+            features
+        )
+        
+        receiver_tensors = {'examples': serialized_tf_example}
+        
+        return tfma.export.EvalInputReceiver(
+            features=transformed_features,
+            receiver_tensors=receiver_tensors,
+            labels=transformed_features[LABEL_COL]
+        )
+    
+    return _input_fn
+
 # training, eval and test input function
 def read_dataset(args, mode):
     batch_size = args['train_batch_size']
@@ -208,6 +237,12 @@ def train_and_evaluate(args):
     
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
     
+    tfma.export.export_eval_savedmodel(
+        estimator=estimator,
+        export_dir_base='model_trained/eval/tfma/',
+        eval_input_receiver_fn=make_eval_input_fn(args)
+    )
+    
     # export results
     if not os.path.exists('data/output'):
         os.mkdir('data/output')
@@ -233,10 +268,3 @@ def train_and_evaluate(args):
 def gzip_reader_fn():
     return tf.TFRecordReader(options=tf.python_io.TFRecordOptions(
         compression_type=tf.python_io.TFRecordCompressionType.GZIP))
-
-
-def get_eval_metrics():
-    return {
-        'accuracy': tflearn.MetricSpec(metric_fn=metrics.streaming_accuracy),
-        'training/hptuning/metric': tflearn.MetricSpec(metric_fn=metrics.streaming_accuracy),
-    }

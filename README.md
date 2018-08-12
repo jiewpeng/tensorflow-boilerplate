@@ -33,7 +33,7 @@ The sample data in this repo is the [SMS Spam Collection dataset](https://archiv
 
 ## TODO
 
-- Use Tensorflow Model Analysis to produce dashboard of model performance analysis 
+- Add slicing to Tensorflow Model Analysis
 - Add hyperparameter tuning
 - Add documentation for key APIs used and reasons for using them
 - Use [tfma's example of packaging the model](https://github.com/tensorflow/model-analysis/tree/master/examples/chicago_taxi)
