@@ -57,7 +57,7 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
                 output_shape=(batch_size, config.MAX_SEQ_LEN)
             )
             embed = hub.Module(module_url, trainable=False)
-            embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32)
+            embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32, name='text_seq_embedding')
             hub.add_signature(inputs=text_feature, outputs=embeddings)
             
         embedding_spec = hub.create_module_spec(_embed)
@@ -117,9 +117,9 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
             batch_norm=True
         )
     elif model_type == 'rnn':      
-        text_input = tf.keras.layers.Input(shape=(config.MAX_SEQ_LEN, embedding_size), name='text', dtype=tf.float32)
+        text_input = tf.keras.layers.Input(shape=(config.MAX_SEQ_LEN, embedding_size), name='text_seq_embedding', dtype=tf.float32)
         processed = text_input
-        for unit in hidden_units.split(' '):
+        for unit in hidden_units:
             processed = tf.keras.layers.LSTM(unit)(processed)
         processed = tf.keras.layers.Dense(128, activation='relu')(processed)
         processed = tf.keras.layers.Dropout(dropout)(processed)
