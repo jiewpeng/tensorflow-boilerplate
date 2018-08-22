@@ -84,7 +84,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--embedding_type',
         help='Embedding to use, one of "nnlm", "universal-sentence-encoder", "elmo"',
-        default='universal-sentence-encoder',
+        default='nnlm',
         type=str
     )
     parser.add_argument(
@@ -96,6 +96,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--hidden_units',
         help='Hidden units of the DNN model, separated by space e.g. "128 64"',
+        default='128 64',
+        type=str
+    )
+    parser.add_argument(
+        '--rnn_units',
+        help='Hidden units of the RNN model, separated by space e.g. "128 64"',
+        default='128 64',
         type=str
     )
     parser.add_argument(

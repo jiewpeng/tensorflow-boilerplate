@@ -17,7 +17,7 @@ import tensorflow_hub as hub
 import apache_beam as beam
 import shutil
 import os
-from config import REGION, BUCKET, PROJECT, LABEL_COL, PASSTHROUGH_COLS, STRING_COLS, NUMERIC_COLS, DELIM, RENAMED_COLS, TOKENIZE_COL, MAX_TOKENS
+from config import REGION, BUCKET, PROJECT, LABEL_COL, PASSTHROUGH_COLS, STRING_COLS, NUMERIC_COLS, DELIM, RENAMED_COLS, TOKENIZE_COL, MAX_TOKENS, MAX_SEQ_LEN
 print(tf.__version__)
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -27,25 +27,48 @@ with open('data/misc/labels.txt', 'r') as f:
 
 
 def build_estimator(model_dir, model_type, embedding_type, learning_rate,
-                    hidden_units, dropout,
+                    hidden_units, rnn_units, dropout,
                     l1_regularization_strength, l2_regularization_strength):
   
     if embedding_type == 'nnlm':
         module_url = 'https://tfhub.dev/google/nnlm-en-dim128/1'
+        embedding_size = 128
     elif embedding_type == 'universal-sentence-encoder':
         module_url = 'https://tfhub.dev/google/universal-sentence-encoder/2'
+        embedding_size = 512
     elif embedding_type == 'elmo':
         module_url = 'https://tfhub.dev/google/elmo/2'
-    elif embedding_type is None:
-        pass
+        embedding_size = 1024
     else:
-        raise InputError('Embedding type must be one of "nnlm", "universal-sentence-encoder", "elmo", None')
+        raise InputError('Embedding type must be one of "nnlm", "universal-sentence-encoder", "elmo"')
     
-    if embedding_type is not None:
+    if model_type in ('linear', 'dnn-linear-combined'):
+        bow_indices = tf.feature_column.categorical_column_with_identity('bow_indices', num_buckets=MAX_TOKENS+1)
+        weighted_bow = tf.feature_column.weighted_categorical_column(bow_indices, 'bow_weight')
+    if model_type in ('dnn', 'dnn-linear-comnbined'):
         embedding = hub.text_embedding_column(TOKENIZE_COL, module_url, trainable=False)
-    bow_indices = tf.feature_column.categorical_column_with_identity('bow_indices', num_buckets=MAX_TOKENS+1)
-    weighted_bow = tf.feature_column.weighted_categorical_column(bow_indices, 'bow_weight')
+    if model_type in ('cnn', 'rnn'):
+        # have to create custom module spec to embed each word without
+        # combining into single sentence embedding
+        def _embed():
+            text_feature = tf.placeholder(tf.string, shape=(None,))
+            words = tf.string_split(text_feature)
+            batch_size = words.dense_shape[0]
+            dense_words = tf.sparse_to_dense(
+                sparse_indices=words.indices,
+                sparse_values=words.values,
+                default_value='',
+                output_shape=(batch_size, MAX_SEQ_LEN)
+            )
+            embed = hub.Module(module_url, trainable=False)
+            embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32)
+            hub.add_signature(inputs=text_feature, outputs=embeddings)
+            
+        embedding_spec = hub.create_module_spec(_embed)
         
+        # embedding shape: (batch_size, MAX_SEQ_LEN, embedding_size)
+        # embedding = hub.text_embedding_column(TOKENIZE_COL, embedding_spec)
+        embedding = hub.feature_column._TextEmbeddingColumn(TOKENIZE_COL, embedding_spec, trainable=False)
     
     if model_type == 'linear':
         feature_columns = [weighted_bow]
@@ -97,12 +120,46 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
             model_dir=model_dir,
             batch_norm=True
         )
+    elif model_type == 'rnn':      
+        text_input = tf.keras.layers.Input(shape=(MAX_SEQ_LEN, embedding_size), name='text', dtype=tf.float32)
+        processed = text_input
+        for unit in rnn_units.split(' '):
+            processed = tf.keras.layers.LSTM(unit)(processed)
+        processed = tf.keras.layers.Dense(128, activation='relu')(processed)
+        processed = tf.keras.layers.Dropout(dropout)(processed)
+        output = tf.keras.layers.Dense(N_CLASSES, activation='sigmoid', name='probabilities')(processed)
+        
+        model = tf.keras.Model(inputs=text_input, outputs=output)
+        
+        model.compile(
+            loss='categorical_crossentropy',
+            optimizer='adam',
+            metrics=['accuracy']
+        )
+        
+        estimator = tf.keras.estimator.model_to_estimator(model)
+        
     else:
         raise InputErorr('Model type must be one of "linear" or "dnn"')
         
     if len(PASSTHROUGH_COLS) > 0:
         estimator = tf.contrib.estimator.forward_features(estimator, PASSTHROUGH_COLS)
-
+        
+    def get_model_fn_with_removed_outputs(estimator):
+        def _model_fn(features, labels, mode):
+            config = estimator.config
+            model_fn_ops = estimator._model_fn(features=features, labels=labels, mode=mode, config=config)
+            model_fn_ops.predictions['probability'] = tf.reduce_max(model_fn_ops.predictions['probabilities'], axis=-1)
+            for key in ('logits', 'logistic', 'probabilities', 'class_ids'):
+                try:
+                    model_fn_ops.predictions.pop(key)
+                except KeyError:
+                    pass
+            return model_fn_ops
+        return _model_fn
+        
+    estimator = tf.estimator.Estimator(model_fn=get_model_fn_with_removed_outputs(estimator))
+    
     return estimator
         
 # Serving input function
@@ -217,6 +274,7 @@ def train_and_evaluate(args):
         args['embedding_type'],
         args['learning_rate'],
         args['hidden_units'].split(' '),
+        args['rnn_units'].split(' '),
         args['dropout'],
         args['l1_regularization_strength'],
         args['l2_regularization_strength']
@@ -243,26 +301,29 @@ def train_and_evaluate(args):
         eval_input_receiver_fn=make_eval_input_fn(args)
     )
     
+    for pred in estimator.predict(input_fn=read_dataset(args, mode=tf.estimator.ModeKeys.EVAL)):
+        print(pred)
+    
     # export results
-    if not os.path.exists('data/output'):
-        os.mkdir('data/output')
-    eval_preds = pd.DataFrame(list(estimator.predict(input_fn=read_dataset(args, tf.estimator.ModeKeys.EVAL))))
-    probabilities = list(list(arr) for arr in eval_preds['probabilities']) # pandas is weird with how it stores arrays
-    with tf.Session() as sess:
-        eval_preds['probability'] = sess.run(tf.reduce_max(probabilities, reduction_indices=[1]))
-    eval_preds['pred_' + LABEL_COL] = eval_preds['classes'].map(lambda x: x[0]) # predictions come in a list per row
-    eval_preds = eval_preds[['pred_' + LABEL_COL, 'probability']]
-    raw_eval_df = pd.concat([
-        pd.read_csv(f, sep=DELIM, names=RENAMED_COLS)
-        for f in tf.gfile.Glob('data/split/eval*.csv')], 
-        axis=0, ignore_index=True)
-    cols = list(raw_eval_df.columns)
-    cols.remove(LABEL_COL)
-    raw_eval_df = raw_eval_df[cols + [LABEL_COL]]
-    for col in ['pred_' + LABEL_COL, 'probability']:
-        raw_eval_df[col] = eval_preds[col]
-    raw_eval_df['wrong'] = (raw_eval_df['pred_' + LABEL_COL] != raw_eval_df[LABEL_COL]).astype(int)
-    raw_eval_df.to_excel('data/output/eval_with_preds.xlsx', index=False)
+#     if not os.path.exists('data/output'):
+#         os.mkdir('data/output')
+#     eval_preds = pd.DataFrame(list(estimator.predict(input_fn=read_dataset(args, tf.estimator.ModeKeys.EVAL))))
+#     probabilities = list(list(arr) for arr in eval_preds['probabilities']) # pandas is weird with how it stores arrays
+#     with tf.Session() as sess:
+#         eval_preds['probability'] = sess.run(tf.reduce_max(probabilities, reduction_indices=[1]))
+#     eval_preds['pred_' + LABEL_COL] = eval_preds['classes'].map(lambda x: x[0]) # predictions come in a list per row
+#     eval_preds = eval_preds[['pred_' + LABEL_COL, 'probability']]
+#     raw_eval_df = pd.concat([
+#         pd.read_csv(f, sep=DELIM, names=RENAMED_COLS)
+#         for f in tf.gfile.Glob('data/split/eval*.csv')], 
+#         axis=0, ignore_index=True)
+#     cols = list(raw_eval_df.columns)
+#     cols.remove(LABEL_COL)
+#     raw_eval_df = raw_eval_df[cols + [LABEL_COL]]
+#     for col in ['pred_' + LABEL_COL, 'probability']:
+#         raw_eval_df[col] = eval_preds[col]
+#     raw_eval_df['wrong'] = (raw_eval_df['pred_' + LABEL_COL] != raw_eval_df[LABEL_COL]).astype(int)
+#     raw_eval_df.to_excel('data/output/eval_with_preds.xlsx', index=False)
     
     
 def gzip_reader_fn():
