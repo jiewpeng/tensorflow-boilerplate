@@ -45,5 +45,6 @@ The sample data in this repo is the [SMS Spam Collection dataset](https://archiv
 ## TODO
 
 - Add slicing to Tensorflow Model Analysis
+- Support keras models
 - Add hyperparameter tuning
 - Use [tfma's example of packaging the model](https://github.com/tensorflow/model-analysis/tree/master/examples/chicago_taxi)
