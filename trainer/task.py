@@ -95,13 +95,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--hidden_units',
-        help='Hidden units of the DNN model, separated by space e.g. "128 64"',
-        default='128 64',
-        type=str
-    )
-    parser.add_argument(
-        '--rnn_units',
-        help='Hidden units of the RNN model, separated by space e.g. "128 64"',
+        help='Hidden units of the DNN or (units of multi-layer) RNN model, separated by space e.g. "128 64"',
         default='128 64',
         type=str
     )
@@ -122,6 +116,12 @@ if __name__ == '__main__':
         help='L2 regularisation strength; controls the magnitude of the weights in the linear model',
         default=0.01,
         type=float
+    )
+    parser.add_argument(
+        '--debug',
+        help='use this while testing out if the model works',
+        default=False,
+        type=bool
     )
 
     args = parser.parse_args()

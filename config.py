@@ -2,6 +2,7 @@
 REGION = 'asia-east1'
 PROJECT = 'tensorflow-boilerplate'
 BUCKET = PROJECT
+TFVERSION = '1.1.0'
 
 DELIM = '<SEP>'
 
