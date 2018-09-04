@@ -120,8 +120,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--debug',
         help='use this while testing out if the model works',
-        default=False,
-        type=bool
+        default='False',
+        type=str
     )
 
     args = parser.parse_args()
@@ -142,7 +142,7 @@ if __name__ == '__main__':
         ).get('task', {}).get('trial', '')
     )
 
-    # Run the training job:
+    # Run the training job
     try:
         model.train_and_evaluate(arguments)
     except:

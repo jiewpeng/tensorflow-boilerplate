@@ -25,7 +25,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 def build_estimator(model_dir, model_type, embedding_type, learning_rate,
                     hidden_units, dropout,
                     l1_regularization_strength, l2_regularization_strength):
-  
+
     if embedding_type == 'nnlm':
         module_url = 'https://tfhub.dev/google/nnlm-en-dim128/1'
         embedding_size = 128
@@ -44,27 +44,28 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
     if model_type in ('dnn', 'dnn-linear-comnbined'):
         embedding = hub.text_embedding_column(config.TOKENIZE_COL, module_url, trainable=False)
     if model_type in ('cnn', 'rnn'):
+        pass
         # have to create custom module spec to embed each word without
         # combining into single sentence embedding
-        def _embed():
-            text_feature = tf.placeholder(tf.string, shape=(None,))
-            words = tf.string_split(text_feature)
-            batch_size = words.dense_shape[0]
-            dense_words = tf.sparse_to_dense(
-                sparse_indices=words.indices,
-                sparse_values=words.values,
-                default_value='',
-                output_shape=(batch_size, config.MAX_SEQ_LEN)
-            )
-            embed = hub.Module(module_url, trainable=False)
-            embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32, name='text_seq_embedding')
-            hub.add_signature(inputs=text_feature, outputs=embeddings)
+#         def _embed():
+#             text_feature = tf.placeholder(tf.string, shape=(None,))
+#             words = tf.string_split(text_feature)
+#             batch_size = words.dense_shape[0]
+#             dense_words = tf.sparse_to_dense(
+#                 sparse_indices=words.indices,
+#                 sparse_values=words.values,
+#                 default_value='',
+#                 output_shape=(batch_size, config.MAX_SEQ_LEN)
+#             )
+#             embed = hub.Module(module_url, trainable=False)
+#             embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32, name='text_seq_embedding')
+#             hub.add_signature(inputs=text_feature, outputs=embeddings)
             
-        embedding_spec = hub.create_module_spec(_embed)
+#         embedding_spec = hub.create_module_spec(_embed)
         
         # embedding shape: (batch_size, config.MAX_SEQ_LEN, embedding_size)
         # embedding = hub.text_embedding_column(config.TOKENIZE_COL, embedding_spec)
-        embedding = hub.feature_column._TextEmbeddingColumn(config.TOKENIZE_COL, embedding_spec, trainable=False)
+#         embedding = hub.feature_column._TextEmbeddingColumn(config.TOKENIZE_COL, embedding_spec, trainable=False)
     
     if model_type == 'linear':
         feature_columns = [weighted_bow]
@@ -116,9 +117,24 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
             model_dir=model_dir,
             batch_norm=True
         )
-    elif model_type == 'rnn':      
-        text_input = tf.keras.layers.Input(shape=(config.MAX_SEQ_LEN, embedding_size), name='text_seq_embedding', dtype=tf.float32)
-        processed = text_input
+    elif model_type == 'rnn':
+        embed = hub.Module(module_url, trainable=False)
+        def seq_embed(batch_of_text):
+            words = tf.string_split(tf.squeeze(batch_of_text))
+            batch_size = words.dense_shape[0]
+            dense_words = tf.sparse_to_dense(
+                sparse_indices=words.indices,
+                sparse_values=words.values,
+                default_value='',
+                output_shape=(batch_size, config.MAX_SEQ_LEN)
+            )
+            embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32)
+            
+            return embeddings
+            
+        text_input = tf.keras.layers.Input(shape=(config.MAX_SEQ_LEN, embedding_size), name=config.TOKENIZE_COL, dtype=tf.float32)
+        processed = tf.keras.layers.Lambda(seq_embed)(text_input)
+        processed = tf.keras.layers.Lambda(seq_embed)(processed)
         for unit in hidden_units:
             processed = tf.keras.layers.LSTM(unit)(processed)
         processed = tf.keras.layers.Dense(128, activation='relu')(processed)
@@ -265,14 +281,14 @@ def train_and_evaluate(args):
     
     # modify according to build_estimator function
     estimator = build_estimator(
-        args['model_dir'],
-        args['model_type'],
-        args['embedding_type'],
-        args['learning_rate'],
-        args['hidden_units'].split(' '),
-        args['dropout'],
-        args['l1_regularization_strength'],
-        args['l2_regularization_strength']
+        model_dir=args['model_dir'],
+        model_type=args['model_type'],
+        embedding_type=args['embedding_type'],
+        learning_rate=args['learning_rate'],
+        hidden_units=args['hidden_units'].split(' '),
+        dropout=args['dropout'],
+        l1_regularization_strength=args['l1_regularization_strength'],
+        l2_regularization_strength=args['l2_regularization_strength']
     )
     
     train_spec = tf.estimator.TrainSpec(
@@ -288,7 +304,9 @@ def train_and_evaluate(args):
         exporters=exporter
     )
     
-    if args['debug'] == True:
+    
+    if args['debug'] == 'True':
+        
         train_spec = tf.estimator.TrainSpec(
             input_fn=read_dataset(args, tf.estimator.ModeKeys.TRAIN),
             max_steps=10
@@ -299,6 +317,7 @@ def train_and_evaluate(args):
         for result in estimator.predict(input_fn=read_dataset(args, mode=tf.estimator.ModeKeys.EVAL)):
             print(result)
     else:
+        
         tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
     
         tfma.export.export_eval_savedmodel(
