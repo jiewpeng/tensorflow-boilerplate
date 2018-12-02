@@ -12,13 +12,12 @@ from tensorflow.layers import max_pooling1d
 from tensorflow.layers import dense
 from tensorflow.layers import dropout
 from tensorflow.layers import batch_normalization
-from tensorflow.contrib.lookup import index_to_string_table_from_tensor
-from tensorflow.contrib.lookup import index_table_from_tensor
+from tensorflow.contrib.lookup import index_to_string_table_from_file
+from tensorflow.contrib.lookup import index_table_from_file
 import tensorflow_hub as hub
 
 from config import MAX_SEQ_LEN
 from config import TOKENIZE_COL
-from variables import LABEL_VOCABULARY
 
 
 def cnn_model_fn(features, labels, mode, params):
@@ -43,8 +42,8 @@ def cnn_model_fn(features, labels, mode, params):
     # Returns
         A tf.estimator.EstimatorSpec of a sepCNN model.
     """
-    index_to_string_table = index_to_string_table_from_tensor(LABEL_VOCABULARY)
-    string_to_index_table = index_table_from_tensor(LABEL_VOCABULARY)
+    index_to_string_table = index_to_string_table_from_file('data/misc/labels.txt')
+    string_to_index_table = index_table_from_file('data/misc/labels.txt')
     num_classes = params['num_classes']
     op_units, op_activation = _get_last_layer_units_and_activation(num_classes)
 
