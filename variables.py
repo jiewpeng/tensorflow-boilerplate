@@ -15,4 +15,3 @@ INDEX_TO_LABEL = tf.contrib.lookup.index_to_string_table_from_file(
 
 N_CLASSES = 2
 LABEL_VOCABULARY = ['ham', 'spam']
-

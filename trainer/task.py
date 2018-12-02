@@ -118,6 +118,30 @@ if __name__ == '__main__':
         type=float
     )
     parser.add_argument(
+        '--blocks',
+        help='No. of blocks in the sepCNN model. Good numbers to try are 1, 2, 4',
+        default=2,
+        type=int
+    )
+    parser.add_argument(
+        '--filters',
+        help='No. of conv filters within each layer in the sepCNN model. Good numbers to try are 8, 16, 32, 64, 128.',
+        default=32,
+        type=int
+    )
+    parser.add_argument(
+        '--kernel_size',
+        help='Kernel size of each conv filter in the sepCNN model. Good numbers to try are 3 and 5',
+        default=3,
+        type=int
+    )
+    parser.add_argument(
+        '--pool_size',
+        help='Pool size of each pooling layer in the sepCNN model',
+        default=3,
+        type=int
+    )
+    parser.add_argument(
         '--debug',
         help='use this while testing out if the model works',
         default='False',

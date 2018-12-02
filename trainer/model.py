@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-
 from __future__ import print_function, division, absolute_import # python 2 compatibility
 import sys
 reload(sys)
@@ -19,12 +18,14 @@ import shutil
 import os
 import config
 import variables
+from sepcnn_model import cnn_model_fn
 print(tf.__version__)
 tf.logging.set_verbosity(tf.logging.INFO)
 
 def build_estimator(model_dir, model_type, embedding_type, learning_rate,
                     hidden_units, dropout,
-                    l1_regularization_strength, l2_regularization_strength):
+                    l1_regularization_strength, l2_regularization_strength,
+                    blocks, filters, kernel_size, pool_size):
 
     if embedding_type == 'nnlm':
         module_url = 'https://tfhub.dev/google/nnlm-en-dim128/1'
@@ -35,6 +36,9 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
     elif embedding_type == 'elmo':
         module_url = 'https://tfhub.dev/google/elmo/2'
         embedding_size = 1024
+    elif embedding_type == 'wikiwords250':
+        module_url = 'https://tfhub.dev/google/Wiki-words-250/1'
+        embedding_size = 250
     else:
         raise InputError('Embedding type must be one of "nnlm", "universal-sentence-encoder", "elmo"')
     
@@ -45,27 +49,6 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
         embedding = hub.text_embedding_column(config.TOKENIZE_COL, module_url, trainable=False)
     if model_type in ('cnn', 'rnn'):
         pass
-        # have to create custom module spec to embed each word without
-        # combining into single sentence embedding
-#         def _embed():
-#             text_feature = tf.placeholder(tf.string, shape=(None,))
-#             words = tf.string_split(text_feature)
-#             batch_size = words.dense_shape[0]
-#             dense_words = tf.sparse_to_dense(
-#                 sparse_indices=words.indices,
-#                 sparse_values=words.values,
-#                 default_value='',
-#                 output_shape=(batch_size, config.MAX_SEQ_LEN)
-#             )
-#             embed = hub.Module(module_url, trainable=False)
-#             embeddings = tf.map_fn(lambda token: embed(token), dense_words, dtype=tf.float32, name='text_seq_embedding')
-#             hub.add_signature(inputs=text_feature, outputs=embeddings)
-            
-#         embedding_spec = hub.create_module_spec(_embed)
-        
-        # embedding shape: (batch_size, config.MAX_SEQ_LEN, embedding_size)
-        # embedding = hub.text_embedding_column(config.TOKENIZE_COL, embedding_spec)
-#         embedding = hub.feature_column._TextEmbeddingColumn(config.TOKENIZE_COL, embedding_spec, trainable=False)
     
     if model_type == 'linear':
         feature_columns = [weighted_bow]
@@ -117,6 +100,21 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
             model_dir=model_dir,
             batch_norm=True
         )
+    elif model_type == 'sepcnn':
+        params = {
+            'learning_rate': learning_rate,
+            'blocks': blocks,
+            'filters': filters,
+            'kernel_size': kernel_size,
+            'dropout_rate': dropout,
+            'pool_size': pool_size,
+            'num_classes': variables.N_CLASSES,
+            'module_url': module_url,
+            'is_embedding_trainable': False,
+            'embedding_size': embedding_size
+        }
+        
+        estimator = tf.estimator.Estimator(model_fn=cnn_model_fn, model_dir=model_dir, params=params)
     elif model_type == 'rnn':
         embed = hub.Module(module_url, trainable=False)
         def seq_embed(batch_of_text):
@@ -169,8 +167,9 @@ def build_estimator(model_dir, model_type, embedding_type, learning_rate,
                     pass
             return model_fn_ops
         return _model_fn
-        
-    estimator = tf.estimator.Estimator(model_fn=get_model_fn_with_removed_outputs(estimator))
+    
+    if model_type != 'sepcnn':
+        estimator = tf.estimator.Estimator(model_fn=get_model_fn_with_removed_outputs(estimator))
     
     return estimator
         
@@ -288,7 +287,11 @@ def train_and_evaluate(args):
         hidden_units=args['hidden_units'].split(' '),
         dropout=args['dropout'],
         l1_regularization_strength=args['l1_regularization_strength'],
-        l2_regularization_strength=args['l2_regularization_strength']
+        l2_regularization_strength=args['l2_regularization_strength'],
+        blocks=args['blocks'],
+        filters=args['filters'],
+        kernel_size=args['kernel_size'],
+        pool_size=args['pool_size']
     )
     
     train_spec = tf.estimator.TrainSpec(
@@ -309,7 +312,13 @@ def train_and_evaluate(args):
         
         train_spec = tf.estimator.TrainSpec(
             input_fn=read_dataset(args, tf.estimator.ModeKeys.TRAIN),
-            max_steps=10
+            max_steps=5
+        )
+        
+        eval_spec = tf.estimator.EvalSpec(
+            input_fn=read_dataset(args, tf.estimator.ModeKeys.EVAL),
+            steps=1,
+            exporters=exporter
         )
         
         tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
