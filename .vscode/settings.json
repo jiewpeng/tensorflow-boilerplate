@@ -3,12 +3,5 @@
         "**/.git/objects/**": true,
         "**/.git/subtree-cache/**": true,
         "**/model_trained/*/**": true
-    },
-    "python.linting.pylintEnabled": false,
-    "python.linting.flake8Enabled": true,
-    "python.linting.enabled": true,
-    "python.pythonPath": "/home/jiewpeng/anaconda2/bin/python",
-    "python.linting.flake8Args": [
-        "--ignore=E501"
-    ]
+      }
 }
