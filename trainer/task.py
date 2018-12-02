@@ -95,13 +95,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--hidden_units',
-        help='Hidden units of the DNN model, separated by space e.g. "128 64"',
-        default='128 64',
-        type=str
-    )
-    parser.add_argument(
-        '--rnn_units',
-        help='Hidden units of the RNN model, separated by space e.g. "128 64"',
+        help='Hidden units of the DNN or (units of multi-layer) RNN model, separated by space e.g. "128 64"',
         default='128 64',
         type=str
     )
@@ -123,6 +117,36 @@ if __name__ == '__main__':
         default=0.01,
         type=float
     )
+    parser.add_argument(
+        '--blocks',
+        help='No. of blocks in the sepCNN model. Good numbers to try are 1, 2, 4',
+        default=2,
+        type=int
+    )
+    parser.add_argument(
+        '--filters',
+        help='No. of conv filters within each layer in the sepCNN model. Good numbers to try are 8, 16, 32, 64, 128.',
+        default=32,
+        type=int
+    )
+    parser.add_argument(
+        '--kernel_size',
+        help='Kernel size of each conv filter in the sepCNN model. Good numbers to try are 3 and 5',
+        default=3,
+        type=int
+    )
+    parser.add_argument(
+        '--pool_size',
+        help='Pool size of each pooling layer in the sepCNN model',
+        default=3,
+        type=int
+    )
+    parser.add_argument(
+        '--debug',
+        help='use this while testing out if the model works',
+        default='False',
+        type=str
+    )
 
     args = parser.parse_args()
     arguments = args.__dict__
@@ -142,7 +166,7 @@ if __name__ == '__main__':
         ).get('task', {}).get('trial', '')
     )
 
-    # Run the training job:
+    # Run the training job
     try:
         model.train_and_evaluate(arguments)
     except:
