@@ -23,6 +23,6 @@ NUMERIC_COLS = []  # includes passthrough and label cols if applicable
 TOKENIZE_COL = 'text'
 NGRAM_RANGE = (1, 3)
 MAX_TOKENS = 2000
-MAX_SEQ_LEN = 200
+MAX_SEQ_LEN = 50
 LABEL_COL = 'spam'
 PASSTHROUGH_COLS = []

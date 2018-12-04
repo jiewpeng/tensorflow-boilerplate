@@ -20,6 +20,24 @@ from config import MAX_SEQ_LEN
 from config import TOKENIZE_COL
 
 
+def module_fn():
+    base_module = hub.Module('https://tfhub.dev/google/nnlm-en-dim128/1')
+    
+    text_input = tf.placeholder(dtype=tf.string)
+    reshaped_input = tf.reshape(text_input, [-1])
+    split = tf.strings.split(reshaped_input)
+    split = tf.sparse.to_dense(split, default_value='')
+    seq_len = tf.shape(split)[1]    
+    batch_size = tf.shape(split)[0]
+    split = tf.cond(
+        seq_len < MAX_SEQ_LEN,
+        lambda: tf.pad(split, [[0, 0], [0, MAX_SEQ_LEN - seq_len]], constant_values=''),
+        lambda: tf.slice(split, [0, 0], [batch_size, MAX_SEQ_LEN])
+    )
+    embeddings = tf.map_fn(base_module, split, dtype=tf.float32)
+    hub.add_signature(inputs=text_input, outputs=embeddings)
+
+
 def cnn_model_fn(features, labels, mode, params):
     """Creates an instance of a separable CNN model.
 
@@ -51,33 +69,12 @@ def cnn_model_fn(features, labels, mode, params):
         params['module_url'],
         trainable=params['is_embedding_trainable'])
 
-    # when predicting, tensors may come expanded or not - reshape to ensure
-    # that all input tensors are the same shape as when training/evaluating
-    if mode == tf.estimator.ModeKeys.PREDICT:
-        input_layer = features[TOKENIZE_COL]
-        input_layer = tf.reshape(input_layer, (tf.shape(input_layer)[0], 1))
-    else:
-        input_layer = features[TOKENIZE_COL]
-
-    # Input shape is (batch_size, 1), need to flatten before passing into
-    # string split.
-    input_layer = tf.reshape(input_layer, [-1])
-
-    # split string before passing into embedding to get out a sequence of
-    # embeddings instead of a combined/averaged embedding, which is the default
-    # behaviour of the TFHub embeddings
-    split = tf.strings.split(input_layer)
-    split = tf.sparse.to_dense(split, default_value='')
-    seq_len = tf.shape(split)[1]    
-    batch_size = tf.shape(split)[0]
-    # shorten or pad sequence to maintain a constant sequence length
-    split = tf.cond(
-        seq_len < MAX_SEQ_LEN,
-        lambda: tf.pad(split, [[0, 0], [0, MAX_SEQ_LEN - seq_len]], constant_values=''),
-        lambda: tf.slice(split, [0, 0], [batch_size, MAX_SEQ_LEN])
+    my_module_spec = hub.create_module_spec(
+        module_fn,
     )
+    sequence_embed = hub.Module(my_module_spec)
 
-    embeddings = tf.map_fn(embed, split, dtype=tf.float32)
+    embeddings = sequence_embed(features[TOKENIZE_COL])
     output = embeddings
 
     # separabale conv blocks
@@ -102,11 +99,10 @@ def cnn_model_fn(features, labels, mode, params):
             depthwise_initializer='random_uniform'
         )
         output = max_pooling1d(
-            output, 
+            output,
             pool_size=params['pool_size'], 
             strides=params['pool_size'])
-        output = batch_normalization(output)
-
+        
     output = separable_conv1d(
         output,
         filters=params['filters'],
@@ -123,22 +119,22 @@ def cnn_model_fn(features, labels, mode, params):
         padding='same',
         activation='relu',
         bias_initializer='random_uniform',
-        depthwise_initializer='random_uniform'
+        depthwise_initializer='random_uniform',
+        name='final_sepconv'
     )
 
-    output = tf.reduce_mean(output, axis=1)  # global average pooling 1d
-    output = batch_normalization(output)
+    output = tf.reduce_mean(output, axis=1, name='globalavgpool')  # global average pooling 1d
     output = dropout(output, rate=params['dropout_rate'])
 
-    logits = dense(output, units=op_units, activation=op_activation)
+    logits = dense(output, units=op_units, activation=op_activation, name='logits')
 
     if op_activation == 'sigmoid':
-        class_ids = tf.cast(logits > 0.5, tf.int64)
+        class_ids = tf.cast(logits > 0.5, tf.int64, name='class_ids')
     else:
-        class_ids = tf.argmax(logits, axis=1)
+        class_ids = tf.argmax(logits, axis=1, name='class_ids')
 
     # get back original labels
-    classes = index_to_string_table.lookup(class_ids)
+    classes = index_to_string_table.lookup(class_ids, name='classes')
 
     predictions = {
         'prediction': classes,

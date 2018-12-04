@@ -323,8 +323,12 @@ def train_and_evaluate(args):
         
         tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
         
+        i = 0
         for result in estimator.predict(input_fn=read_dataset(args, mode=tf.estimator.ModeKeys.EVAL)):
             print(result)
+            i += 1
+            if i == 20:
+                break
     else:
         
         tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
