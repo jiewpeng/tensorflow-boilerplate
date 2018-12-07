@@ -13,7 +13,7 @@ estimator = build_estimator(
     dropout=0.5,
     l1_regularization_strength=0.01, 
     l2_regularization_strength=0.01,
-    blocks=2, 
+    blocks=1, 
     filters=8, 
     kernel_size=3, 
     pool_size=3)
@@ -23,8 +23,8 @@ args = {
     'eval_data_paths': './data/tft/eval*',
     'model_dir': './model_trained',
     'num_epochs': 1,
-    'train_batch_size': 256,
-    'eval_batch_size': 256,
+    'train_batch_size': 128,
+    'eval_batch_size': 128,
     'metadata_path': './data/tft/metadata',
     'model_type': 'sepcnn'
 }
